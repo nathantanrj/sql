@@ -1,0 +1,158 @@
+ SELECT DISTINCT location, date, total_cases FROM PortfolioProject..CovidData
+ ORDER By date DESC, location
+
+
+-- Total cases vs Total Deaths
+SELECT location, date, total_cases, total_deaths, (CAST(total_deaths AS float) /nullif(CAST(total_cases AS float),0))*100 as FatalityPercentage 
+FROM PortfolioProject..CovidData
+WHERE location = 'Singapore'
+ORDER BY date DESC
+
+
+-- Total cases vs Population
+SELECT location, date, population, total_cases, (CAST(total_cases AS float)/population)*100 as InfectionPercentage
+FROM PortfolioProject..CovidData
+WHERE location = 'Singapore'
+ORDER BY date DESC
+
+-- Removed records with empty population('')
+DELETE FROM PortfolioProject..CovidData
+WHERE population = ''
+
+-- Countries Highest Infection Rate
+-- NOTE: Some countries were shown to have 0 infection, which is not true
+SELECT location, population, 
+MAX(CAST(total_cases AS float)) as HighestInfectionCount, 
+MAX(CAST(total_cases AS float)/population)*100 as InfectionPercentagePerPopulation
+FROM PortfolioProject..CovidData
+GROUP BY location, population
+ORDER by InfectionPercentagePerPopulation DESC
+
+
+-- Countries with Highest Death Count per Population
+SELECT location, population, 
+MAX(CAST(total_cases AS float)) as TotalCases,
+MAX(CAST(total_deaths AS float)) as TotalDeathCount,
+MAX(CAST(total_deaths AS float)/population)*100 as FatalityPercentagePerPopulation,
+(nullif(MAX(CAST(total_deaths AS float)),0)/MAX(CAST(total_cases AS float)))*100 as FatalityPercentagePerInfected
+FROM PortfolioProject..CovidData
+GROUP BY location, population
+ORDER by FatalityPercentagePerInfected DESC
+
+
+-- BY CONTINENT
+
+SELECT continent, MAX(cast(total_deaths as float)) as TotalDeathCount
+FROM PortfolioProject..CovidData
+WHERE continent is not null AND continent != ''
+GROUP BY continent
+ORDER BY TotalDeathCount DESC
+
+
+
+-- GLOBAL NUMBERS
+
+--new cases by date
+SELECT date, SUM(CAST(new_cases as float))
+FROM PortfolioProject..CovidData
+WHERE continent != ''
+GROUP BY date
+ORDER BY date DESC
+-- alternative way
+--SELECT * FROM PortfolioProject..CovidData WHERE location = 'World' ORDER BY date DESC
+
+
+SELECT location, date, total_vaccinations FROM PortfolioProject..CovidData
+WHERE continent != ''
+AND date LIKE '2022-08-__'
+
+
+-- TEMP TABLE
+
+DROP TABLE IF EXISTS #2022CovidDeaths
+CREATE TABLE #2022CovidDeaths
+(
+continent nvarchar(255),
+location nvarchar(255),
+date nvarchar(30),
+total_cases float,
+new_cases float,
+total_deaths float,
+new_deaths float
+)
+INSERT INTO #2022CovidDeaths
+SELECT continent, location, date, CAST(total_cases as float), CAST(new_cases as float), CAST(total_deaths as float), CAST(new_deaths as float)
+FROM PortfolioProject..CovidData
+WHERE date LIKE '2022%'
+
+SELECT * FROM #2022CovidDeaths
+ORDER BY date DESC
+
+
+-- NOTE: Most countries do not update vaccination numbers regularly
+DROP TABLE IF EXISTS #2022CovidVaccinations
+CREATE TABLE #2022CovidVaccinations
+(
+continent nvarchar(255),
+location nvarchar(255),
+date nvarchar(30),
+population float,
+total_vaccinations float,
+new_vaccinations float,
+people_fully_vaccinated float
+)
+INSERT INTO #2022CovidVaccinations
+SELECT continent, location, date, CAST(population as float), 
+ CAST(total_vaccinations as float), CAST(new_vaccinations as float), CAST(people_fully_vaccinated as float)
+FROM PortfolioProject..CovidData
+WHERE date LIKE '2022%'
+
+
+
+-- VIEWS
+CREATE VIEW PopulationVaccinatedPercentage AS
+SELECT dea.continent, dea.location, dea.date, vac.population, vac.new_vaccinations,
+SUM(CAST(vac.new_vaccinations as float)) OVER (PARTITION BY dea.location ORDER BY dea.location,dea.date) AS PeopleVaccinated
+FROM PortfolioProject..CovidData dea
+JOIN PortfolioProject..CovidData vac
+	ON dea.location = vac.location
+	AND dea.date = vac.date
+WHERE dea.continent != ''
+
+
+
+---------------------------------------------------------------------------------------------
+---------------------------- DATA USED FOR TABLEAU VISUALISATION ----------------------------
+---------------------------------------------------------------------------------------------
+
+
+
+-- SINGAPORE
+SELECT location, date, population, total_cases, nullif(CAST(total_cases AS float),0)/CAST(population AS float)*100 AS PercentPopulationInfected
+FROM PortfolioProject..CovidData
+WHERE location = 'Singapore'
+ORDER BY date ASC
+
+-- Worldwide infection by quarters only
+SELECT location, date, population,  
+CAST(total_cases AS float)/population*100 as InfectionPercentagePerPopulation
+FROM PortfolioProject..CovidData
+WHERE (date LIKE '____-03-01'
+OR date LIKE '____-06-01'
+OR date LIKE '____-09-01'
+OR date LIKE '____-12-01')
+AND continent != ''
+ORDER BY location, date ASC
+
+SELECT location, population, 
+MAX(CAST(total_cases AS float)) as TotalCases,
+MAX(CAST(total_cases AS float)/population)*100 as InfectionPercentagePerPopulation,
+(nullif(MAX(CAST(total_deaths AS float)),0)/MAX(CAST(total_cases AS float)))*100 as DeathPercentagePerInfected
+FROM PortfolioProject..CovidData
+GROUP BY location, population
+ORDER by DeathPercentagePerInfected DESC
+
+--WORLD
+SELECT total_cases, total_deaths FROM PortfolioProject..CovidData
+WHERE location = 'World'
+AND date = '2022-08-01'
